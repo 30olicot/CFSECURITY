@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "4K School Monitor",
+  "version": "1.0",
+  "permissions": ["tabs", "storage"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
