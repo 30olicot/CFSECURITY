@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>4K School Monitoring System</title>
+    <style>
+        :root { --primary: #007bff; --bg: #0f172a; --card: #1e293b; --text: #f8fafc; }
+        body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+        .hidden { display: none !important; }
+        
+        /* Login Screen */
+        #login-screen { display: flex; justify-content: center; align-items: center; height: 100vh; }
+        .login-card { background: var(--card); padding: 2rem; border-radius: 12px; width: 350px; text-align: center; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: var(--primary); border: none; color: white; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        
+        /* App Interface */
+        .header { height: 60px; background: var(--card); display: flex; align-items: center; padding: 0 20px; justify-content: space-between; }
+        #monitor-frame { width: 100%; height: calc(100vh - 60px); border: none; background: white; }
+        .controls { display: flex; gap: 10px; flex-grow: 1; margin: 0 40px; }
+        .role-tag { font-size: 0.8rem; padding: 4px 8px; border-radius: 4px; background: #334155; }
+    </style>
+</head>
+<body>
+
+    <!-- 1. LOGIN SECTION -->
+    <div id="login-screen">
+        <div class="login-card">
+            <h2>School Monitor</h2>
+            <input type="email" id="email" placeholder="Email">
+            <input type="password" id="pass" placeholder="Password">
+            <button id="loginBtn">Sign In</button>
+            <p style="font-size: 0.7rem; color: #64748b; margin-top: 10px;">Teacher accounts must include "teacher" in the email.</p>
+        </div>
+    </div>
+
+    <!-- 2. MAIN APP SECTION -->
+    <div id="app-screen" class="hidden">
+        <div class="header">
+            <div>
+                <span id="display-name">User</span>
+                <span class="role-tag" id="role-label">Student</span>
+            </div>
+            
+            <div id="teacher-controls" class="controls hidden">
+                <input type="text" id="urlInput" placeholder="Enter URL (https://...)">
+                <button id="updateBtn" style="width: auto;">Push URL</button>
+            </div>
+
+            <button id="logoutBtn" style="width: auto; background: #ef4444;">Logout</button>
+        </div>
+        <iframe id="monitor-frame" src="about:blank"></iframe>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+        // --- STEP 1: REPLACE WITH YOUR FIREBASE CONFIG ---
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT.firebaseapp.com",
+            databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+            projectId: "YOUR_PROJECT",
+            appId: "YOUR_APP_ID"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getDatabase(app);
+
+        // --- AUTH LOGIC ---
+        document.getElementById('loginBtn').onclick = () => {
+            const email = document.getElementById('email').value;
+            const pass = document.getElementById('pass').value;
+            signInWithEmailAndPassword(auth, email, pass).catch(err => alert(err.message));
+        };
+
+        document.getElementById('logoutBtn').onclick = () => signOut(auth);
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                document.getElementById('login-screen').classList.add('hidden');
+                document.getElementById('app-screen').classList.remove('hidden');
+                document.getElementById('display-name').innerText = user.email;
+
+                if (user.email.includes('teacher')) {
+                    document.getElementById('role-label').innerText = "Teacher";
+                    document.getElementById('teacher-controls').classList.remove('hidden');
+                } else {
+                    onValue(ref(db, 'currentUrl'), (snapshot) => {
+                        const url = snapshot.val();
+                        if (url) document.getElementById('monitor-frame').src = url;
+                    });
+                }
+            } else {
+                document.getElementById('login-screen').classList.remove('hidden');
+                document.getElementById('app-screen').classList.add('hidden');
+            }
+        });
+
+        // --- TEACHER ACTIONS ---
+        document.getElementById('updateBtn').onclick = () => {
+            const url = document.getElementById('urlInput').value;
+            if (url.startsWith('http')) {
+                set(ref(db, 'currentUrl'), url);
+                document.getElementById('monitor-frame').src = url;
+            } else {
+                alert("Include http:// or https://");
+            }
+        };
+    </script>
+</body>
+</html>
