@@ -2,113 +2,129 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>4K School Monitoring System</title>
+    <title>P2P School Monitor (No Firebase)</title>
     <style>
-        :root { --primary: #007bff; --bg: #0f172a; --card: #1e293b; --text: #f8fafc; }
-        body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+        :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --primary: #3b82f6; }
+        body { margin: 0; font-family: sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        .setup-overlay { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; padding: 20px; text-align: center; }
+        .card { background: var(--card); padding: 2rem; border-radius: 12px; width: 100%; max-width: 500px; }
+        textarea { width: 100%; height: 80px; margin: 10px 0; background: #000; color: #0f0; border: 1px solid #334155; font-family: monospace; font-size: 10px; }
+        button { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-weight: bold; margin: 5px; }
         .hidden { display: none !important; }
-        
-        /* Login Screen */
-        #login-screen { display: flex; justify-content: center; align-items: center; height: 100vh; }
-        .login-card { background: var(--card); padding: 2rem; border-radius: 12px; width: 350px; text-align: center; }
-        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: white; box-sizing: border-box; }
-        button { width: 100%; padding: 12px; background: var(--primary); border: none; color: white; border-radius: 6px; cursor: pointer; font-weight: bold; }
-        
-        /* App Interface */
-        .header { height: 60px; background: var(--card); display: flex; align-items: center; padding: 0 20px; justify-content: space-between; }
-        #monitor-frame { width: 100%; height: calc(100vh - 60px); border: none; background: white; }
-        .controls { display: flex; gap: 10px; flex-grow: 1; margin: 0 40px; }
-        .role-tag { font-size: 0.8rem; padding: 4px 8px; border-radius: 4px; background: #334155; }
+        #nav { height: 60px; background: var(--card); display: flex; align-items: center; padding: 0 20px; gap: 10px; }
+        #nav input { flex-grow: 1; padding: 10px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: white; }
+        iframe { flex-grow: 1; border: none; background: white; }
+        .status { font-size: 12px; color: #10b981; }
     </style>
 </head>
 <body>
 
-    <!-- 1. LOGIN SECTION -->
-    <div id="login-screen">
-        <div class="login-card">
-            <h2>School Monitor</h2>
-            <input type="email" id="email" placeholder="Email">
-            <input type="password" id="pass" placeholder="Password">
-            <button id="loginBtn">Sign In</button>
-            <p style="font-size: 0.7rem; color: #64748b; margin-top: 10px;">Teacher accounts must include "teacher" in the email.</p>
+    <!-- 1. SETUP PHASE (Manual Signaling) -->
+    <div id="setup" class="setup-overlay">
+        <div class="card" id="role-selection">
+            <h2>Select Your Role</h2>
+            <button onclick="startTeacher()">I am the Teacher</button>
+            <button onclick="startStudent()">I am a Student</button>
+        </div>
+
+        <div class="card hidden" id="teacher-setup">
+            <h3>Teacher: Step 1</h3>
+            <p>Copy this code and send it to your students:</p>
+            <textarea id="teacher-offer" readonly></textarea>
+            <h3>Step 2</h3>
+            <p>Paste a student's response code here:</p>
+            <textarea id="teacher-answer" placeholder="Paste student answer here..."></textarea>
+            <button onclick="teacherConnect()">Connect to Student</button>
+        </div>
+
+        <div class="card hidden" id="student-setup">
+            <h3>Student: Step 1</h3>
+            <p>Paste the Teacher's code here:</p>
+            <textarea id="student-input" placeholder="Paste teacher code here..."></textarea>
+            <button onclick="studentCreateAnswer()">Generate Response</button>
+            <div id="student-response-area" class="hidden">
+                <p>Now copy this and send it back to the Teacher:</p>
+                <textarea id="student-answer" readonly></textarea>
+            </div>
         </div>
     </div>
 
-    <!-- 2. MAIN APP SECTION -->
-    <div id="app-screen" class="hidden">
-        <div class="header">
-            <div>
-                <span id="display-name">User</span>
-                <span class="role-tag" id="role-label">Student</span>
-            </div>
+    <!-- 2. MONITORING INTERFACE -->
+    <div id="nav" class="hidden">
+        <span class="status">● Connected</span>
+        <input type="text" id="urlInput" placeholder="Teacher: Paste URL here (https://...)">
+        <button id="pushBtn" class="hidden">Push to Student</button>
+    </div>
+    <iframe id="mainFrame" src="about:blank"></iframe>
+
+    <script>
+        const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:://google.com" }] });
+        let dataChannel;
+
+        // --- TEACHER LOGIC ---
+        async function startTeacher() {
+            document.getElementById('role-selection').classList.add('hidden');
+            document.getElementById('teacher-setup').classList.remove('hidden');
             
-            <div id="teacher-controls" class="controls hidden">
-                <input type="text" id="urlInput" placeholder="Enter URL (https://...)">
-                <button id="updateBtn" style="width: auto;">Push URL</button>
-            </div>
+            dataChannel = pc.createDataChannel("monitor");
+            setupDataChannel();
 
-            <button id="logoutBtn" style="width: auto; background: #ef4444;">Logout</button>
-        </div>
-        <iframe id="monitor-frame" src="about:blank"></iframe>
-    </div>
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
+            // Wait for ICE candidates to gather
+            pc.onicecandidate = (e) => {
+                if (!e.candidate) document.getElementById('teacher-offer').value = btoa(JSON.stringify(pc.localDescription));
+            };
+        }
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-        import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+        async function teacherConnect() {
+            const answer = JSON.parse(atob(document.getElementById('teacher-answer').value));
+            await pc.setRemoteDescription(answer);
+            document.getElementById('pushBtn').classList.remove('hidden');
+        }
 
-        // --- STEP 1: REPLACE WITH YOUR FIREBASE CONFIG ---
-        const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_PROJECT.firebaseapp.com",
-            databaseURL: "https://YOUR_PROJECT.firebaseio.com",
-            projectId: "YOUR_PROJECT",
-            appId: "YOUR_APP_ID"
-        };
+        // --- STUDENT LOGIC ---
+        function startStudent() {
+            document.getElementById('role-selection').classList.add('hidden');
+            document.getElementById('student-setup').classList.remove('hidden');
+            
+            pc.ondatachannel = (e) => {
+                dataChannel = e.channel;
+                setupDataChannel();
+            };
+        }
 
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getDatabase(app);
+        async function studentCreateAnswer() {
+            const offer = JSON.parse(atob(document.getElementById('student-input').value));
+            await pc.setRemoteDescription(offer);
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
 
-        // --- AUTH LOGIC ---
-        document.getElementById('loginBtn').onclick = () => {
-            const email = document.getElementById('email').value;
-            const pass = document.getElementById('pass').value;
-            signInWithEmailAndPassword(auth, email, pass).catch(err => alert(err.message));
-        };
-
-        document.getElementById('logoutBtn').onclick = () => signOut(auth);
-
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                document.getElementById('login-screen').classList.add('hidden');
-                document.getElementById('app-screen').classList.remove('hidden');
-                document.getElementById('display-name').innerText = user.email;
-
-                if (user.email.includes('teacher')) {
-                    document.getElementById('role-label').innerText = "Teacher";
-                    document.getElementById('teacher-controls').classList.remove('hidden');
-                } else {
-                    onValue(ref(db, 'currentUrl'), (snapshot) => {
-                        const url = snapshot.val();
-                        if (url) document.getElementById('monitor-frame').src = url;
-                    });
+            pc.onicecandidate = (e) => {
+                if (!e.candidate) {
+                    document.getElementById('student-answer').value = btoa(JSON.stringify(pc.localDescription));
+                    document.getElementById('student-response-area').classList.remove('hidden');
                 }
-            } else {
-                document.getElementById('login-screen').classList.remove('hidden');
-                document.getElementById('app-screen').classList.add('hidden');
-            }
-        });
+            };
+        }
 
-        // --- TEACHER ACTIONS ---
-        document.getElementById('updateBtn').onclick = () => {
+        // --- COMMON LOGIC ---
+        function setupDataChannel() {
+            dataChannel.onopen = () => {
+                document.getElementById('setup').classList.add('hidden');
+                document.getElementById('nav').classList.remove('hidden');
+            };
+            dataChannel.onmessage = (e) => {
+                document.getElementById('mainFrame').src = e.data;
+            };
+        }
+
+        document.getElementById('pushBtn').onclick = () => {
             const url = document.getElementById('urlInput').value;
             if (url.startsWith('http')) {
-                set(ref(db, 'currentUrl'), url);
-                document.getElementById('monitor-frame').src = url;
-            } else {
-                alert("Include http:// or https://");
+                dataChannel.send(url);
+                document.getElementById('mainFrame').src = url;
             }
         };
     </script>
